@@ -132,8 +132,7 @@ def build():
         if not items:
             msg += "Məlumat yoxdur\n\n"
 
-        for item in items:
-            title, link = item.split("||")
+        for title, link in items:
 
             msg += f"""📄 {title}
 🧾 {summary(title)}
