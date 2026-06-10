@@ -127,21 +127,15 @@ def build():
     }
 
     for name, items in sources.items():
-        msg += f"📌 {name}\n\n"
+    msg += f"📌 {name}\n\n"
 
-        if not items:
-            msg += "Məlumat yoxdur\n\n"
+    for item in items:
+        title = item[0]
+        link = item[1]
 
-        title = item[0] if len(item) > 0 else ""
-link = item[1] if len(item) > 1 else ""
+        msg += f"📄 {title}\n🧾 {summary(title)}\n🔗 {link}\n\n"
 
-            msg += f"""📄 {title}
-🧾 {summary(title)}
-🔗 {link}
-
-"""
-
-        msg += "----------------------\n\n"
+    msg += "----------------------\n\n"
 
     return msg
 
