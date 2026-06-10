@@ -64,28 +64,36 @@ def nk():
     r = requests.get(url, timeout=20)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    items = soup.select("a")
+    items = soup.find_all("a")
 
     results = []
 
     for i in items:
-        title = clean(i.text)
+        title = i.get_text(" ", strip=True)
         link = i.get("href")
 
-        if not title or len(title) < 10:
+        if not title or not link:
             continue
 
-        if link and "http" not in link:
+        title_lower = title.lower()
+
+        # yalnız hüquqi aktları saxla
+        if not any(x in title_lower for x in [
+            "qərar", "sərəncam", "fərman",
+            "qanun", "qaydası", "qayda", "təsdiq"
+        ]):
+            continue
+
+        # boş və ya çox qısa şeyləri at
+        if len(title) < 15:
+            continue
+
+        if "http" not in link:
             link = "https://nk.gov.az" + link
 
-        key = title + link
-        if key in seen:
-            continue
-        seen.add(key)
+        results.append((title, link))
 
-        results.append(title + "||" + link)
-
-    return results[:8]
+    return results[:10]
 
 
 # -------------------------
