@@ -63,26 +63,35 @@ def get_nk():
         r = requests.get(url, timeout=20)
         soup = BeautifulSoup(r.text, "html.parser")
 
-        items = soup.find_all("a")
-
         results = []
 
-        for i in items:
-            title = i.get_text(" ", strip=True)
-            link = i.get("href")
+        for a in soup.find_all("a"):
+            title = a.get_text(" ", strip=True)
+            link = a.get("href")
 
             if not title or not link:
                 continue
 
             t = title.lower()
 
-            # only legal acts
+            # ❌ noise filter (ən vacib hissə)
+            bad_words = [
+                "haqqında", "struktur", "qayda", "əsasnamə",
+                "fəaliyyət", "ümumi", "portal", "səhifə",
+                "məlumat", "kontakt", "daxil ol"
+            ]
+
+            if any(x in t for x in bad_words):
+                continue
+
+            # ✔ only legal acts
             if not any(x in t for x in [
-                "qərar", "sərəncam", "fərman", "qanun", "qayda", "təsdiq"
+                "qərar", "sərəncam", "fərman", "təsdiq", "qanun"
             ]):
                 continue
 
-            if len(title) < 10:
+            # too short = noise
+            if len(title) < 15:
                 continue
 
             if "http" not in link:
