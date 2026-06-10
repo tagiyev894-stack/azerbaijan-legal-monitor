@@ -1,9 +1,12 @@
 import requests
 from bs4 import BeautifulSoup
 import os
+import re
 
 TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
+
+seen = set()
 
 
 def send(text):
@@ -11,101 +14,124 @@ def send(text):
     requests.post(url, data={"chat_id": CHAT_ID, "text": text})
 
 
-# ----------------------------
-# REAL PARSERS
-# ----------------------------
+# -------------------------
+# CLEAN TEXT
+# -------------------------
+def clean(t):
+    return re.sub(r"\s+", " ", t).strip()
 
-def get_president():
-    url = "https://president.az/az/news"
-    html = requests.get(url, timeout=20).text
-    soup = BeautifulSoup(html, "html.parser")
 
-    items = soup.select("div.news-inner h3 a")
+# -------------------------
+# PRESIDENT (DECREES + ORDERS)
+# -------------------------
+def president(url):
+    r = requests.get(url, timeout=20)
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    items = soup.select("div.document-item, div.news-item, li")
 
     results = []
-    for i in items[:5]:
-        title = i.text.strip()
-        link = "https://president.az" + i.get("href", "")
-        results.append((title, link))
 
-    return results
+    for i in items:
+        a = i.find("a")
+        if not a:
+            continue
+
+        title = clean(a.text)
+        link = a.get("href")
+
+        if not title or len(title) < 10:
+            continue
+
+        if link and "http" not in link:
+            link = "https://president.az" + link
+
+        key = title + link
+        if key in seen:
+            continue
+        seen.add(key)
+
+        results.append(title + "||" + link)
+
+    return results[:8]
 
 
-def get_nk():
-    url = "https://nk.gov.az/az/documents"
-    html = requests.get(url, timeout=20).text
-    soup = BeautifulSoup(html, "html.parser")
+# -------------------------
+# NK ACTS (REAL PAGE)
+# -------------------------
+def nk():
+    url = "https://nk.gov.az/az/senedler/hamisi"
+    r = requests.get(url, timeout=20)
+    soup = BeautifulSoup(r.text, "html.parser")
 
     items = soup.select("a")
 
     results = []
-    for i in items[:10]:
-        title = i.text.strip()
+
+    for i in items:
+        title = clean(i.text)
         link = i.get("href")
 
-        if title and link and "http" not in link:
+        if not title or len(title) < 10:
+            continue
+
+        if link and "http" not in link:
             link = "https://nk.gov.az" + link
-            results.append((title, link))
 
-    return results[:5]
+        key = title + link
+        if key in seen:
+            continue
+        seen.add(key)
 
+        results.append(title + "||" + link)
 
-def get_eqanun():
-    url = "https://e-qanun.az/framework"
-    html = requests.get(url, timeout=20).text
-    soup = BeautifulSoup(html, "html.parser")
-
-    items = soup.select("a")
-
-    results = []
-    for i in items[:15]:
-        title = i.text.strip()
-        link = i.get("href")
-
-        if title and link and "javascript" not in link:
-            if "http" not in link:
-                link = "https://e-qanun.az" + link
-            results.append((title, link))
-
-    return results[:5]
+    return results[:8]
 
 
-# ----------------------------
-# SIMPLE SUMMARY ENGINE
-# ----------------------------
-
+# -------------------------
+# SIMPLE LEGAL SUMMARY ENGINE
+# -------------------------
 def summary(title):
     t = title.lower()
 
-    if "qanun" in t:
-        return "Qanunvericilik bazasında yeni hüquqi tənzimləmə."
     if "fərman" in t:
-        return "Prezident tərəfindən yeni idarəetmə və hüquqi tənzimləmə."
+        return "Normativ idarəetmə və icra mexanizmlərində dəyişikliklər."
     if "qərar" in t:
-        return "İnzibati və icraedici qaydalarda yenilənmə."
-    if "deyisiklik" in t or "dəyişiklik" in t:
-        return "Mövcud hüquqi aktlara dəyişikliklər edilib."
-    return "Yeni hüquqi sənəd dərc olunub."
+        return "İnzibati qaydaların və icra proseslərinin tənzimlənməsi."
+    if "sərəncam" in t:
+        return "Operativ idarəetmə və təşkilati tədbirlər."
+    if "qanun" in t:
+        return "Hüquqi normativ bazada dəyişiklik və ya yeni tənzimləmə."
+    return "Yeni normativ hüquqi akt qəbul edilmişdir."
 
 
-# ----------------------------
-# MESSAGE BUILDER
-# ----------------------------
-
+# -------------------------
+# BUILD MESSAGE
+# -------------------------
 def build():
     msg = "📅 GÜNDƏLİK HÜQUQİ AKTLAR\n\n"
 
     sources = {
-        "PREZİDENT": get_president(),
-        "NAZİRLƏR KABİNETİ": get_nk(),
-        "E-QANUN": get_eqanun()
+        "🇦🇿 PREZİDENT (FƏRMAN + SƏRƏNCAM)": president("https://president.az/az/documents/category/decrees") +
+                                          president("https://president.az/az/documents/category/orders"),
+
+        "🏛 NAZİRLƏR KABİNETİ": nk()
     }
 
     for name, items in sources.items():
         msg += f"📌 {name}\n\n"
 
-        for title, link in items:
-            msg += f"🏷 {title}\n🧾 {summary(title)}\n🔗 {link}\n\n"
+        if not items:
+            msg += "Məlumat yoxdur\n\n"
+
+        for item in items:
+            title, link = item.split("||")
+
+            msg += f"""📄 {title}
+🧾 {summary(title)}
+🔗 {link}
+
+"""
 
         msg += "----------------------\n\n"
 
@@ -113,8 +139,7 @@ def build():
 
 
 def main():
-    message = build()
-    send(message)
+    send(build())
 
 
 main()
