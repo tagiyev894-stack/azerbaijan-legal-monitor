@@ -132,7 +132,7 @@ def build():
         if not items:
             msg += "Məlumat yoxdur\n\n"
 
-        ftitle = item[0] if len(item) > 0 else ""
+        title = item[0] if len(item) > 0 else ""
 link = item[1] if len(item) > 1 else ""
 
             msg += f"""📄 {title}
