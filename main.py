@@ -2,12 +2,12 @@ import requests
 from bs4 import BeautifulSoup
 import os
 from datetime import datetime
-import pytz  # Python 3.9+ olduqda zoneinfo ilə də əvəz edə bilərsən
+from zoneinfo import ZoneInfo  # pytz əvəzinə
 
 # ---------- Telegram settings ----------
 TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
-BAKU_TZ = pytz.timezone("Asia/Baku")
+BAKU_TZ = ZoneInfo("Asia/Baku")
 
 def send_message(text):
     if not TOKEN or not CHAT_ID:
@@ -21,16 +21,10 @@ def send_message(text):
 
 # ---------- Bugünkü tarix ----------
 def today_str():
-    """Bugünkü tarixi AZ formatında qaytarır (10.06.2026)."""
     return datetime.now(BAKU_TZ).strftime("%d.%m.%Y")
 
-# ---------- Köməkçi: səhifədəki bugünkü sənədləri tap ----------
-def find_today_docs(url, link_prefix="", date_format="%d.%m.%Y"):
-    """
-    Verilən url‑dən bütün <a> elementlərini gəzir.
-    Hər bir keçidin valideyn elementində bugünkü tarix varsa,
-    onu nəticəyə əlavə edir.
-    """
+# ---------- Köməkçi ----------
+def find_today_docs(url, link_prefix=""):
     items = []
     try:
         r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
@@ -43,12 +37,8 @@ def find_today_docs(url, link_prefix="", date_format="%d.%m.%Y"):
             href = a["href"]
             if not title or len(title) < 5:
                 continue
-
-            # Tam keçid düzəlt
             if not href.startswith("http"):
                 href = link_prefix + href
-
-            # Valideyn blokun bütün mətnini yoxla
             parent_text = a.find_parent().get_text(separator=" ", strip=True) if a.find_parent() else ""
             if today in parent_text:
                 items.append((title, href))
@@ -58,7 +48,6 @@ def find_today_docs(url, link_prefix="", date_format="%d.%m.%Y"):
 
 # ---------- Mənbələr ----------
 def get_president_today():
-    """Prezident saytından bugünkü fərman və sərəncamlar."""
     docs = []
     for cat in ["decrees", "orders"]:
         url = f"https://president.az/az/documents/category/{cat}"
@@ -66,10 +55,8 @@ def get_president_today():
     return docs
 
 def get_nk_today():
-    """Nazirlər Kabinetindən bugünkü sənədlər."""
     url = "https://nk.gov.az/az/senedler/hamisi"
     docs = find_today_docs(url, link_prefix="https://nk.gov.az")
-    # Əlavə filtr: yalnız hüquqi sənədlər
     filtered = []
     for title, link in docs:
         low = title.lower()
@@ -78,35 +65,41 @@ def get_nk_today():
     return filtered
 
 def get_eqanun_today():
-    """E-qanun.az saytından bugünkü yeni sənədlər."""
-    # Əsas səhifədəki "Yeni sənədlər" bölməsi
     url = "https://www.e-qanun.az/"
     docs = find_today_docs(url, link_prefix="https://www.e-qanun.az")
-    # E‑qanun bəzən gün.ay.il formatında verir, ona görə yoxladıq
     if not docs:
-        # Alternativ: print/change səhifəsi (tarix çox vaxt dd.mm.yy olur)
         url2 = "https://www.e-qanun.az/print/change"
-        docs2 = find_today_docs(url2, link_prefix="https://www.e-qanun.az")
-        docs += docs2
+        docs += find_today_docs(url2, link_prefix="https://www.e-qanun.az")
     return docs
 
-# ---------- Qısa məzmun etiketi ----------
-def summary_tag(title, link):
-    """1‑2 sözlük qısa təsvir."""
+# ---------- Qısa analiz ----------
+def one_line_summary(title):
     t = title.lower()
-    if "fərman" in t or "/decrees" in link:
-        return "📜 Fərman"
-    if "sərəncam" in t or "/orders" in link:
-        return "📋 Sərəncam"
-    if "qanun" in t:
-        return "⚖️ Qanun"
-    if "qərar" in t:
-        return "📌 Qərar"
     if "dəyişiklik" in t:
-        return "🔄 Dəyişiklik"
-    if "əsasnamə" in t or "nizamnamə" in t:
-        return "📑 Əsasnamə"
-    return "📄 Sənəd"
+        if "vergi" in t: return "Vergi Məcəlləsinə dəyişiklik edilir."
+        if "əmək" in t: return "Əmək Məcəlləsinə dəyişiklik edilir."
+        if "inzibati" in t or "xətalar" in t: return "İnzibati Xətalar Məcəlləsinə dəyişiklik edilir."
+        if "cinayət" in t: return "Cinayət Məcəlləsinə dəyişiklik edilir."
+        if "mülki" in t: return "Mülki Məcəlləyə dəyişiklik edilir."
+        if "təhsil" in t: return "Təhsil sahəsində normativ dəyişiklik."
+        return "Müxtəlif normativ hüquqi aktlara dəyişiklik edilir."
+    if "təsdiq" in t:
+        if "qayda" in t: return "Yeni qaydalar təsdiq edilir."
+        if "proqram" in t or "strategiya" in t: return "Dövlət proqramı/strategiyası təsdiq edilir."
+        if "əsasnamə" in t or "nizamnamə" in t: return "Əsasnamə/Nizamnamə təsdiq edilir."
+        return "Sənəd təsdiq edilir."
+    if "ləğv" in t: return "Mövcud normativ akt ləğv edilir."
+    if "yaradılması" in t or "təşkil" in t:
+        if "komissiya" in t: return "Yeni komissiya yaradılır."
+        if "idarə" in t or "agentlik" in t: return "Yeni dövlət qurumu yaradılır."
+        return "Yeni qurum/struktur yaradılır."
+    if "müavinət" in t or "pensiya" in t: return "Sosial ödənişlərlə bağlı tənzimləmə."
+    if "güzəşt" in t: return "Güzəşt/vergi azadolmaları ilə bağlı qərar."
+    if "qərar" in t: return "Nazirlər Kabineti tərəfindən qərar qəbul edilmişdir."
+    if "sərəncam" in t: return "Prezident sərəncamı imzalanmışdır."
+    if "fərman" in t: return "Prezident fərmanı imzalanmışdır."
+    if "qanun" in t: return "Yeni qanun qəbul edilmişdir."
+    return "Yeni normativ akt."
 
 # ---------- Mesaj qur ----------
 def build_message():
@@ -122,10 +115,10 @@ def build_message():
         if docs:
             msg += f"📌 {name}\n"
             for title, link in docs:
-                tag = summary_tag(title, link)
-                msg += f"  {tag}\n"
-                msg += f"  {title}\n"
-                msg += f"  🔗 {link}\n\n"
+                summary = one_line_summary(title)
+                msg += f"📄 {title}\n"
+                msg += f"🔍 {summary}\n"
+                msg += f"🔗 {link}\n\n"
             total += len(docs)
         else:
             msg += f"📌 {name}\n  Yeni sənəd yoxdur\n\n"
